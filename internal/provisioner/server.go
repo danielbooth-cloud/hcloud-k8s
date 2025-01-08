@@ -9,7 +9,6 @@ import (
 
 	"github.com/briandowns/spinner"
 	"github.com/hetznercloud/hcloud-go/v2/hcloud"
-	"hcloud-k8s/internal/ctxutil"
 	"hcloud-k8s/internal/logging"
 )
 
@@ -51,9 +50,7 @@ func New(token string, config *Config) *ServerProvisioner {
 
 // ProvisionCluster creates both master and worker nodes
 func (p *ServerProvisioner) ProvisionCluster(ctx context.Context) error {
-	// Create context with timeout for the entire provisioning operation
-	ctx, cancel := ctxutil.WithTimeout(ctx, ctxutil.LongTimeout)
-	defer cancel()
+	p.logger.Info("starting cluster provisioning")
 
 	if err := p.provisionNodes(ctx, Master, p.config.MasterNodeCount); err != nil {
 		return fmt.Errorf("failed to provision master nodes: %v", err)
@@ -74,12 +71,10 @@ func (p *ServerProvisioner) provisionNodes(ctx context.Context, nodeType NodeTyp
 		"cluster", p.config.ClusterName)
 
 	for i := 1; i <= count; i++ {
-		// Create context with timeout for each server creation
-		serverCtx, cancel := ctxutil.WithTimeout(ctx, ctxutil.DefaultTimeout)
-		defer cancel()
-
 		name := fmt.Sprintf("%s-%s-%d", p.config.ClusterName, nodeType, i)
-		if err := p.createServer(serverCtx, name, nodeType); err != nil {
+		
+		// Use the parent context directly since it already has a timeout
+		if err := p.createServer(ctx, name, nodeType); err != nil {
 			p.logger.Error("failed to create node",
 				"nodeType", nodeType,
 				"name", name,

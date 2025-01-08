@@ -3,8 +3,13 @@ package hetzner
 import (
 	"context"
 	"fmt"
+	"time"
 	"github.com/hetznercloud/hcloud-go/v2/hcloud"
-	"hcloud-k8s/internal/ctxutil"
+)
+
+const (
+	// DefaultTimeout is the default timeout for API calls
+	DefaultTimeout = 30 * time.Second
 )
 
 // Client wraps the Hetzner cloud client with our custom operations
@@ -14,26 +19,31 @@ type Client struct {
 
 // New creates a new Hetzner client
 func New(token string) *Client {
-	return &Client{hcloud.NewClient(hcloud.WithToken(token))}
+	return &Client{
+		Client: hcloud.NewClient(hcloud.WithToken(token)),
+	}
 }
 
 // GetLocations returns available Hetzner locations with descriptions
 func (c *Client) GetLocations(ctx context.Context) ([]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, DefaultTimeout)
+	defer cancel()
+
 	locations, _, err := c.Location.List(ctx, hcloud.LocationListOpts{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get locations: %v", err)
 	}
 	
-	regions := make([]string, len(locations))
-	for i, loc := range locations {
-		regions[i] = fmt.Sprintf("%s (%s)", loc.Name, loc.Description)
+	var names []string
+	for _, loc := range locations {
+		names = append(names, fmt.Sprintf("%s (%s)", loc.Name, loc.Description))
 	}
-	return regions, nil
+	return names, nil
 }
 
 // GetServerTypes returns available server types with specifications
 func (c *Client) GetServerTypes(ctx context.Context) ([]string, error) {
-	ctx, cancel := ctxutil.WithTimeout(ctx, ctxutil.DefaultTimeout)
+	ctx, cancel := context.WithTimeout(ctx, DefaultTimeout)
 	defer cancel()
 
 	serverTypes, _, err := c.ServerType.List(ctx, hcloud.ServerTypeListOpts{})

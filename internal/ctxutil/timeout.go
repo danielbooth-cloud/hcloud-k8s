@@ -12,11 +12,6 @@ const (
 	LongTimeout = 10 * time.Minute
 )
 
-// WithTimeout wraps context.WithTimeout for consistent timeout handling
-func WithTimeout(parent context.Context, duration time.Duration) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(parent, duration)
-}
-
 // NewLongTimeout creates a new context with the LongTimeout duration
 func NewLongTimeout() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), LongTimeout)
