@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/briandowns/spinner"
 	"github.com/hetznercloud/hcloud-go/v2/hcloud"
 	"hcloud-k8s/internal/ctxutil"
 )
@@ -113,8 +114,12 @@ func (p *ServerProvisioner) createServer(ctx context.Context, name string, nodeT
 }
 
 func (p *ServerProvisioner) waitForServer(ctx context.Context, action *hcloud.Action) error {
+	s := spinner.New(spinner.CharSets[14], 100*time.Millisecond)
+	s.Suffix = " Creating server..."
+	s.Start()
+	defer s.Stop()
+
 	done := make(chan error)
-	progress := make(chan int)
 	
 	go func() {
 		ticker := time.NewTicker(1 * time.Second)
@@ -139,7 +144,7 @@ func (p *ServerProvisioner) waitForServer(ctx context.Context, action *hcloud.Ac
 					return
 				}
 				
-				progress <- action.Progress
+				s.Suffix = fmt.Sprintf(" Creating server... %d%%", action.Progress)
 				
 			case <-ctx.Done():
 				done <- ctx.Err()
@@ -148,12 +153,5 @@ func (p *ServerProvisioner) waitForServer(ctx context.Context, action *hcloud.Ac
 		}
 	}()
 
-	for {
-		select {
-		case err := <-done:
-			return err
-		case prog := <-progress:
-			fmt.Printf("\rProgress: %d%%", prog)
-		}
-	}
+	return <-done
 } 
