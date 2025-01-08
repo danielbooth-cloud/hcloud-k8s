@@ -20,13 +20,14 @@ func runBootstrap(cmd *cobra.Command, args []string) error {
 	// Provision infrastructure
 	fmt.Println("\nStarting cluster provisioning...")
 	prov := provisioner.New(config.HetznerToken, &provisioner.Config{
-		ClusterName: config.ClusterName,
-		Region:     config.Region,
-		NodeCount:  config.NodeCount,
-		NodeType:   config.NodeType,
+		ClusterName:     config.ClusterName,
+		Region:         config.Region,
+		MasterNodeCount: config.MasterNodeCount,
+		WorkerNodeCount: config.WorkerNodeCount,
+		NodeType:       config.NodeType,
 	})
 
-	if err := prov.ProvisionMasterNodes(); err != nil {
+	if err := prov.ProvisionCluster(); err != nil {
 		return fmt.Errorf("failed to provision cluster: %v", err)
 	}
 

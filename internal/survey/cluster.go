@@ -10,7 +10,8 @@ import (
 type ClusterConfig struct {
 	ClusterName       string
 	Region           string
-	NodeCount        int
+	MasterNodeCount  int
+	WorkerNodeCount  int
 	NodeType         string
 	KubernetesVersion string
 	HetznerToken     string
@@ -57,9 +58,16 @@ func GetClusterConfig(ctx context.Context) (*ClusterConfig, error) {
 			},
 		},
 		{
-			Name: "nodeCount",
+			Name: "masterNodeCount",
 			Prompt: &survey.Input{
-				Message: "How many nodes?",
+				Message: "How many master nodes?",
+				Default: "3",
+			},
+		},
+		{
+			Name: "workerNodeCount",
+			Prompt: &survey.Input{
+				Message: "How many worker nodes?",
 				Default: "3",
 			},
 		},
