@@ -96,7 +96,7 @@ func buildQuestions(options *HetznerOptions) []*survey.Question {
 		createInputQuestion("nodeCount", "How many master nodes do you want?", "3"),
 		createInputQuestion("nodeCount", "How many worker nodes do you want?", "3"),
 		createSelectQuestion("nodeType", "Choose node type:", options.NodeTypes),
-		createSelectQuestion("kubernetesVersion", "Choose Kubernetes version:", options.K8sVersions),
+		createSelectQuestion("kubernetesVersion", "Choose Kubernetes version:", options.K8sVersions), // TODO: Implement dynamic K8s version fetching, select from rke2 or k3s
 	}
 }
 
@@ -127,7 +127,7 @@ func runBootstrap(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func newBootstrapCmd() *cobra.Command {
+func BootstrapCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "bootstrap",
 		Short: "Bootstrap a new Kubernetes cluster",
@@ -142,6 +142,6 @@ func Execute() error {
 		Short: "A CLI tool for managing Kubernetes clusters on Hetzner Cloud",
 	}
 	
-	rootCmd.AddCommand(newBootstrapCmd())
+	rootCmd.AddCommand(BootstrapCmd())
 	return rootCmd.Execute()
 } 
