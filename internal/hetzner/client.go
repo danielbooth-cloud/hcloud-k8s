@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/hetznercloud/hcloud-go/v2/hcloud"
+	"hcloud-k8s/internal/ctxutil"
 )
 
 // Client wraps the Hetzner cloud client with our custom operations
@@ -32,6 +33,9 @@ func (c *Client) GetLocations(ctx context.Context) ([]string, error) {
 
 // GetServerTypes returns available server types with specifications
 func (c *Client) GetServerTypes(ctx context.Context) ([]string, error) {
+	ctx, cancel := ctxutil.WithTimeout(ctx, ctxutil.DefaultTimeout)
+	defer cancel()
+
 	serverTypes, _, err := c.ServerType.List(ctx, hcloud.ServerTypeListOpts{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server types: %v", err)
@@ -44,5 +48,10 @@ func (c *Client) GetServerTypes(ctx context.Context) ([]string, error) {
 				st.Name, st.Cores, st.Memory, st.Disk))
 		}
 	}
+	
+	if len(types) == 0 {
+		return nil, fmt.Errorf("no x86 server types found")
+	}
+	
 	return types, nil
 } 

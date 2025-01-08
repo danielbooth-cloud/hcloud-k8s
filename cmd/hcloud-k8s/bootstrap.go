@@ -1,15 +1,17 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"github.com/spf13/cobra"
+	"hcloud-k8s/internal/ctxutil"
 	"hcloud-k8s/internal/provisioner"
 	"hcloud-k8s/internal/survey"
 )
 
 func runBootstrap(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	// Create context with timeout for the entire operation
+	ctx, cancel := ctxutil.NewLongTimeout()
+	defer cancel()
 	
 	// Get cluster configuration (including token)
 	config, err := survey.GetClusterConfig(ctx)
@@ -27,7 +29,7 @@ func runBootstrap(cmd *cobra.Command, args []string) error {
 		NodeType:       config.NodeType,
 	})
 
-	if err := prov.ProvisionCluster(); err != nil {
+	if err := prov.ProvisionCluster(ctx); err != nil {
 		return fmt.Errorf("failed to provision cluster: %v", err)
 	}
 
