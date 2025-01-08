@@ -8,6 +8,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// ClusterConfig holds the configuration for a Kubernetes cluster
+// including infrastructure details and cluster specifications
 type ClusterConfig struct {
 	ClusterName       string
 	Region           string
@@ -17,6 +19,8 @@ type ClusterConfig struct {
 	HetznerToken     string
 }
 
+// HetznerOptions contains the available options fetched from Hetzner Cloud API
+// including regions, node types, and supported Kubernetes versions
 type HetznerOptions struct {
 	Regions    []string
 	NodeTypes  []string
@@ -127,6 +131,8 @@ func runBootstrap(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// BootstrapCmd creates and returns the cobra command for bootstrapping
+// a new Kubernetes cluster on Hetzner Cloud
 func BootstrapCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "bootstrap",
@@ -136,6 +142,8 @@ func BootstrapCmd() *cobra.Command {
 	}
 }
 
+// Execute adds all child commands to the root command and sets flags appropriately.
+// This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() error {
 	rootCmd := &cobra.Command{
 		Use:   "hcloud-k8s",
