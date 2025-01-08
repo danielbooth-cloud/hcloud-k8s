@@ -3,12 +3,14 @@ package provisioner
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/briandowns/spinner"
 	"github.com/hetznercloud/hcloud-go/v2/hcloud"
 	"hcloud-k8s/internal/ctxutil"
+	"hcloud-k8s/internal/logging"
 )
 
 // NodeType represents the type of node (master or worker)
@@ -35,6 +37,7 @@ type Config struct {
 type ServerProvisioner struct {
 	client *hcloud.Client
 	config *Config
+	logger *slog.Logger
 }
 
 // New creates a new ServerProvisioner instance
@@ -42,6 +45,7 @@ func New(token string, config *Config) *ServerProvisioner {
 	return &ServerProvisioner{
 		client: hcloud.NewClient(hcloud.WithToken(token)),
 		config: config,
+		logger: logging.GetLogger("provisioner"),
 	}
 }
 
@@ -64,6 +68,11 @@ func (p *ServerProvisioner) ProvisionCluster(ctx context.Context) error {
 
 // provisionNodes creates nodes of the specified type
 func (p *ServerProvisioner) provisionNodes(ctx context.Context, nodeType NodeType, count int) error {
+	p.logger.Info("starting node provisioning", 
+		"nodeType", nodeType,
+		"count", count,
+		"cluster", p.config.ClusterName)
+
 	for i := 1; i <= count; i++ {
 		// Create context with timeout for each server creation
 		serverCtx, cancel := ctxutil.WithTimeout(ctx, ctxutil.DefaultTimeout)
@@ -71,8 +80,16 @@ func (p *ServerProvisioner) provisionNodes(ctx context.Context, nodeType NodeTyp
 
 		name := fmt.Sprintf("%s-%s-%d", p.config.ClusterName, nodeType, i)
 		if err := p.createServer(serverCtx, name, nodeType); err != nil {
+			p.logger.Error("failed to create node",
+				"nodeType", nodeType,
+				"name", name,
+				"error", err)
 			return fmt.Errorf("failed to create %s node %s: %v", nodeType, name, err)
 		}
+		
+		p.logger.Info("successfully created node",
+			"nodeType", nodeType,
+			"name", name)
 	}
 	return nil
 }

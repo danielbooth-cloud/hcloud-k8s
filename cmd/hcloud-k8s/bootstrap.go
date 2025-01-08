@@ -6,21 +6,29 @@ import (
 	"hcloud-k8s/internal/ctxutil"
 	"hcloud-k8s/internal/provisioner"
 	"hcloud-k8s/internal/survey"
+	"hcloud-k8s/internal/logging"
 )
 
 func runBootstrap(cmd *cobra.Command, args []string) error {
-	// Create context with timeout for the entire operation
+	logger := logging.GetLogger("bootstrap")
+	
 	ctx, cancel := ctxutil.NewLongTimeout()
 	defer cancel()
 	
-	// Get cluster configuration (including token)
+	logger.Info("starting cluster bootstrap")
+	
 	config, err := survey.GetClusterConfig(ctx)
 	if err != nil {
+		logger.Error("failed to get cluster configuration", "error", err)
 		return fmt.Errorf("failed to get cluster configuration: %v", err)
 	}
 
-	// Provision infrastructure
-	fmt.Println("\nStarting cluster provisioning...")
+	logger.Info("provisioning infrastructure",
+		"cluster", config.ClusterName,
+		"region", config.Region,
+		"masterNodes", config.MasterNodeCount,
+		"workerNodes", config.WorkerNodeCount)
+
 	prov := provisioner.New(config.HetznerToken, &provisioner.Config{
 		ClusterName:     config.ClusterName,
 		Region:         config.Region,
@@ -30,10 +38,14 @@ func runBootstrap(cmd *cobra.Command, args []string) error {
 	})
 
 	if err := prov.ProvisionCluster(ctx); err != nil {
+		logger.Error("failed to provision cluster", 
+			"cluster", config.ClusterName,
+			"error", err)
 		return fmt.Errorf("failed to provision cluster: %v", err)
 	}
 
-	fmt.Printf("\nCluster %s infrastructure provisioned successfully!\n", config.ClusterName)
+	logger.Info("cluster provisioned successfully",
+		"cluster", config.ClusterName)
 	return nil
 }
 
