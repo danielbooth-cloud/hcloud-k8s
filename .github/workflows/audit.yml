@@ -1,8 +1,6 @@
 name: Audit
 
 on:
-  push:
-    branches: ['**']
   pull_request:
     branches: ['**']
 
