@@ -3,10 +3,13 @@ package provisioner
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
+	"github.com/briandowns/spinner"
 	"github.com/hetznercloud/hcloud-go/v2/hcloud"
+	"hcloud-k8s/internal/logging"
 )
 
 // NodeType represents the type of node (master or worker)
@@ -33,6 +36,7 @@ type Config struct {
 type ServerProvisioner struct {
 	client *hcloud.Client
 	config *Config
+	logger *slog.Logger
 }
 
 // New creates a new ServerProvisioner instance
@@ -40,16 +44,19 @@ func New(token string, config *Config) *ServerProvisioner {
 	return &ServerProvisioner{
 		client: hcloud.NewClient(hcloud.WithToken(token)),
 		config: config,
+		logger: logging.GetLogger("provisioner"),
 	}
 }
 
 // ProvisionCluster creates both master and worker nodes
-func (p *ServerProvisioner) ProvisionCluster() error {
-	if err := p.provisionNodes(Master, p.config.MasterNodeCount); err != nil {
+func (p *ServerProvisioner) ProvisionCluster(ctx context.Context) error {
+	p.logger.Info("starting cluster provisioning")
+
+	if err := p.provisionNodes(ctx, Master, p.config.MasterNodeCount); err != nil {
 		return fmt.Errorf("failed to provision master nodes: %v", err)
 	}
 
-	if err := p.provisionNodes(Worker, p.config.WorkerNodeCount); err != nil {
+	if err := p.provisionNodes(ctx, Worker, p.config.WorkerNodeCount); err != nil {
 		return fmt.Errorf("failed to provision worker nodes: %v", err)
 	}
 
@@ -57,53 +64,74 @@ func (p *ServerProvisioner) ProvisionCluster() error {
 }
 
 // provisionNodes creates nodes of the specified type
-func (p *ServerProvisioner) provisionNodes(nodeType NodeType, count int) error {
-	ctx := context.Background()
-	serverType := strings.Split(p.config.NodeType, " ")[0]
-	
-	fmt.Printf("\nProvisioning %d %s nodes...\n", count, nodeType)
-	
+func (p *ServerProvisioner) provisionNodes(ctx context.Context, nodeType NodeType, count int) error {
+	p.logger.Info("starting node provisioning", 
+		"nodeType", nodeType,
+		"count", count,
+		"cluster", p.config.ClusterName)
+
 	for i := 1; i <= count; i++ {
 		name := fmt.Sprintf("%s-%s-%d", p.config.ClusterName, nodeType, i)
 		
-		opts := hcloud.ServerCreateOpts{
-			Name:       name,
-			ServerType: &hcloud.ServerType{Name: serverType},
-			Image:     &hcloud.Image{Name: "ubuntu-22.04"},
-			Location:  &hcloud.Location{Name: strings.Split(p.config.Region, " ")[0]},
-			Labels: map[string]string{
-				"cluster": p.config.ClusterName,
-				"role":    string(nodeType),
-				"index":   fmt.Sprintf("%d", i),
-			},
-		}
-
-		result, _, err := p.client.Server.Create(ctx, opts)
-		if err != nil {
+		// Use the parent context directly since it already has a timeout
+		if err := p.createServer(ctx, name, nodeType); err != nil {
+			p.logger.Error("failed to create node",
+				"nodeType", nodeType,
+				"name", name,
+				"error", err)
 			return fmt.Errorf("failed to create %s node %s: %v", nodeType, name, err)
 		}
+		
+		p.logger.Info("successfully created node",
+			"nodeType", nodeType,
+			"name", name)
+	}
+	return nil
+}
 
-		fmt.Printf("Creating %s node %s (ID: %d)...\n", nodeType, name, result.Server.ID)
-		if err := p.waitForServer(ctx, result.Action); err != nil {
-			return fmt.Errorf("error waiting for %s node %s creation: %v", nodeType, name, err)
-		}
-		fmt.Println()
-
-		// Store the node ID in the appropriate slice
-		if nodeType == Master {
-			p.config.MasterNodes = append(p.config.MasterNodes, fmt.Sprint(result.Server.ID))
-		} else {
-			p.config.WorkerNodes = append(p.config.WorkerNodes, fmt.Sprint(result.Server.ID))
-		}
+func (p *ServerProvisioner) createServer(ctx context.Context, name string, nodeType NodeType) error {
+	serverType := strings.Split(p.config.NodeType, " ")[0]
+	
+	opts := hcloud.ServerCreateOpts{
+		Name:       name,
+		ServerType: &hcloud.ServerType{Name: serverType},
+		Image:     &hcloud.Image{Name: "ubuntu-22.04"},
+		Location:  &hcloud.Location{Name: strings.Split(p.config.Region, " ")[0]},
+		Labels: map[string]string{
+			"cluster": p.config.ClusterName,
+			"role":    string(nodeType),
+			"index":   strings.Split(name, "-")[2],
+		},
 	}
 
-	fmt.Printf("\nAll %s nodes provisioned successfully!\n", nodeType)
+	result, _, err := p.client.Server.Create(ctx, opts)
+	if err != nil {
+		return fmt.Errorf("failed to create server %s: %v", name, err)
+	}
+
+	fmt.Printf("Creating %s node %s (ID: %d)...\n", nodeType, name, result.Server.ID)
+	if err := p.waitForServer(ctx, result.Action); err != nil {
+		return err
+	}
+	fmt.Println()
+
+	// Store the node ID in the appropriate slice
+	if nodeType == Master {
+		p.config.MasterNodes = append(p.config.MasterNodes, fmt.Sprint(result.Server.ID))
+	} else {
+		p.config.WorkerNodes = append(p.config.WorkerNodes, fmt.Sprint(result.Server.ID))
+	}
+
 	return nil
 }
 
 func (p *ServerProvisioner) waitForServer(ctx context.Context, action *hcloud.Action) error {
+	s := spinner.New(spinner.CharSets[14], 100*time.Millisecond)
+	s.Suffix = " Creating server..."
+	s.Start()
+	defer s.Stop()
+
 	done := make(chan error)
-	progress := make(chan int)
 	
 	go func() {
 		ticker := time.NewTicker(1 * time.Second)
@@ -128,7 +156,7 @@ func (p *ServerProvisioner) waitForServer(ctx context.Context, action *hcloud.Ac
 					return
 				}
 				
-				progress <- action.Progress
+				s.Suffix = fmt.Sprintf(" Creating server... %d%%", action.Progress)
 				
 			case <-ctx.Done():
 				done <- ctx.Err()
@@ -137,12 +165,5 @@ func (p *ServerProvisioner) waitForServer(ctx context.Context, action *hcloud.Ac
 		}
 	}()
 
-	for {
-		select {
-		case err := <-done:
-			return err
-		case prog := <-progress:
-			fmt.Printf("\rProgress: %d%%", prog)
-		}
-	}
+	return <-done
 } 
