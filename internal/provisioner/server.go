@@ -12,6 +12,7 @@ import (
 // NodeType represents the type of node (master or worker)
 type NodeType string
 
+// NodeType represents the type of node (master or worker)
 const (
 	Master NodeType = "master"
 	Worker NodeType = "worker"
