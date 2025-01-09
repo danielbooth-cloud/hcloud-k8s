@@ -15,13 +15,16 @@ const (
 	maxVersions = 5
 )
 
+// Distribution represents a Kubernetes distribution type (RKE2 or K3s)
 type Distribution string
 
+// Supported Kubernetes distributions
 const (
 	RKE2 Distribution = "RKE2"
 	K3S  Distribution = "K3s"
 )
 
+// Release represents a GitHub release response structure
 type Release struct {
 	TagName string `json:"tag_name"`
 }
@@ -30,10 +33,13 @@ type githubError struct {
 	Message string `json:"message"`
 }
 
+// GetDistributions returns a list of supported Kubernetes distributions
 func GetDistributions() []string {
 	return []string{string(RKE2), string(K3S)}
 }
 
+// GetVersions fetches available versions for the specified Kubernetes distribution
+// from GitHub releases. Returns the 5 most recent major.minor versions.
 func GetVersions(ctx context.Context, dist Distribution) ([]string, error) {
 	var url string
 	switch dist {
