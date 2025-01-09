@@ -73,7 +73,8 @@ func (p *ServerProvisioner) findExistingSSHKey(ctx context.Context, sshKeyName s
 }
 
 func savePEMKey(filePath string, key *rsa.PrivateKey) error {
-	privateKeyFile, err := os.Create(filePath)
+	// Create the file with restricted permissions (0600)
+	privateKeyFile, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return fmt.Errorf("failed to create private key file: %v", err)
 	}
