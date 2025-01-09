@@ -6,8 +6,6 @@ import (
 	"github.com/AlecAivazis/survey/v2"
 	"hcloud-k8s/internal/hetzner"
 	"hcloud-k8s/internal/kubernetes"
-	"regexp"
-	"hcloud-k8s/internal/errors"
 )
 
 // ClusterConfig holds the configuration for a Kubernetes cluster
@@ -112,25 +110,3 @@ func GetClusterConfig(ctx context.Context) (*ClusterConfig, error) {
 
 	return config, nil
 }
-
-func validateClusterName(name string) error {
-	if len(name) < 3 || len(name) > 63 {
-		return errors.NewValidationError("clusterName", "must be between 3 and 63 characters")
-	}
-	
-	if !regexp.MustCompile(`^[a-z0-9][a-z0-9-]*[a-z0-9]$`).MatchString(name) {
-		return errors.NewValidationError("clusterName", "must contain only lowercase letters, numbers, and hyphens, and must start and end with a letter or number")
-	}
-	
-	return nil
-}
-
-func validateNodeCount(count int, nodeType string) error {
-	if count < 1 {
-		return errors.NewValidationError(nodeType+"NodeCount", "must be at least 1")
-	}
-	if count > 10 {
-		return errors.NewValidationError(nodeType+"NodeCount", "cannot exceed 10")
-	}
-	return nil
-} 
