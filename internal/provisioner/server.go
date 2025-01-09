@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 	"time"
-
+	"hcloud-k8s/internal/util"
+	"hcloud-k8s/internal/errors"
+	"hcloud-k8s/internal/logging"
 	"github.com/briandowns/spinner"
 	"github.com/hetznercloud/hcloud-go/v2/hcloud"
-	"hcloud-k8s/internal/logging"
 )
 
 // NodeType represents the type of node (master or worker)
@@ -90,13 +92,14 @@ func (p *ServerProvisioner) provisionNodes(ctx context.Context, nodeType NodeTyp
 }
 
 func (p *ServerProvisioner) createServer(ctx context.Context, name string, nodeType NodeType) error {
-	serverType := strings.Split(p.config.NodeType, " ")[0]
+	serverType := util.ExtractFirstPart(p.config.NodeType)
+	location := util.ExtractFirstPart(p.config.Region)
 	
 	opts := hcloud.ServerCreateOpts{
 		Name:       name,
 		ServerType: &hcloud.ServerType{Name: serverType},
 		Image:     &hcloud.Image{Name: "ubuntu-22.04"},
-		Location:  &hcloud.Location{Name: strings.Split(p.config.Region, " ")[0]},
+		Location:  &hcloud.Location{Name: location},
 		Labels: map[string]string{
 			"cluster": p.config.ClusterName,
 			"role":    string(nodeType),
@@ -106,23 +109,10 @@ func (p *ServerProvisioner) createServer(ctx context.Context, name string, nodeT
 
 	result, _, err := p.client.Server.Create(ctx, opts)
 	if err != nil {
-		return fmt.Errorf("failed to create server %s: %v", name, err)
+		return errors.NewAPIError("CreateServer", http.StatusInternalServerError, err.Error())
 	}
 
-	fmt.Printf("Creating %s node %s (ID: %d)...\n", nodeType, name, result.Server.ID)
-	if err := p.waitForServer(ctx, result.Action); err != nil {
-		return err
-	}
-	fmt.Println()
-
-	// Store the node ID in the appropriate slice
-	if nodeType == Master {
-		p.config.MasterNodes = append(p.config.MasterNodes, fmt.Sprint(result.Server.ID))
-	} else {
-		p.config.WorkerNodes = append(p.config.WorkerNodes, fmt.Sprint(result.Server.ID))
-	}
-
-	return nil
+	return p.waitForServer(ctx, result.Action)
 }
 
 func (p *ServerProvisioner) waitForServer(ctx context.Context, action *hcloud.Action) error {
