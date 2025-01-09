@@ -7,9 +7,9 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
-	"net/http"
 
 	"golang.org/x/crypto/ssh"
 	"hcloud-k8s/internal/errors"
@@ -22,6 +22,44 @@ func (p *ServerProvisioner) generateSSHKey(ctx context.Context, clusterName stri
 	publicKeyPath := fmt.Sprintf("%s_id_rsa.pub", sshKeyName)
 
 	// Check if the key already exists in Hetzner
+	if key, err := p.findExistingSSHKey(ctx, sshKeyName); err == nil {
+		return key, nil
+	}
+
+	// Generate RSA key pair
+	privateKey, err := rsa.GenerateKey(rand.Reader, 4096)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate private key: %v", err)
+	}
+
+	// Save private key
+	if err := savePEMKey(privateKeyPath, privateKey); err != nil {
+		return nil, err
+	}
+
+	// Generate and save public key
+	publicKey, err := ssh.NewPublicKey(&privateKey.PublicKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate public key: %v", err)
+	}
+	if err := os.WriteFile(publicKeyPath, ssh.MarshalAuthorizedKey(publicKey), 0644); err != nil {
+		return nil, fmt.Errorf("failed to write public key: %v", err)
+	}
+
+	// Create SSH key in Hetzner
+	hcloudKey, _, err := p.client.SSHKey.Create(ctx, hcloud.SSHKeyCreateOpts{
+		Name:      sshKeyName,
+		PublicKey: string(ssh.MarshalAuthorizedKey(publicKey)),
+	})
+	if err != nil {
+		return nil, errors.NewAPIError("SSHKey", http.StatusInternalServerError, fmt.Sprintf("failed to create SSH key: %v", err))
+	}
+
+	fmt.Printf("Private key stored at: %s\n", filepath.Join(".", privateKeyPath))
+	return hcloudKey, nil
+}
+
+func (p *ServerProvisioner) findExistingSSHKey(ctx context.Context, sshKeyName string) (*hcloud.SSHKey, error) {
 	keys, err := p.client.SSHKey.All(ctx)
 	if err != nil {
 		return nil, errors.NewAPIError("SSHKey", http.StatusInternalServerError, "failed to list SSH keys")
@@ -31,59 +69,18 @@ func (p *ServerProvisioner) generateSSHKey(ctx context.Context, clusterName stri
 			return key, nil
 		}
 	}
+	return nil, fmt.Errorf("SSH key not found")
+}
 
-	// Check if the key files already exist locally
-	if _, err := os.Stat(privateKeyPath); err == nil {
-		return nil, fmt.Errorf("private key already exists at %s", privateKeyPath)
-	}
-	if _, err := os.Stat(publicKeyPath); err == nil {
-		return nil, fmt.Errorf("public key already exists at %s", publicKeyPath)
-	}
-
-	// Generate RSA key pair
-	privateKey, err := rsa.GenerateKey(rand.Reader, 4096)
+func savePEMKey(filePath string, key *rsa.PrivateKey) error {
+	privateKeyFile, err := os.Create(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate private key: %v", err)
-	}
-
-	// Encode private key to PEM format
-	privateKeyFile, err := os.Create(privateKeyPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create private key file: %v", err)
+		return fmt.Errorf("failed to create private key file: %v", err)
 	}
 	defer privateKeyFile.Close()
 
-	privateKeyPEM := &pem.Block{
+	return pem.Encode(privateKeyFile, &pem.Block{
 		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
-	}
-	if err := pem.Encode(privateKeyFile, privateKeyPEM); err != nil {
-		return nil, fmt.Errorf("failed to encode private key: %v", err)
-	}
-
-	// Generate and encode public key
-	publicKey, err := ssh.NewPublicKey(&privateKey.PublicKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate public key: %v", err)
-	}
-	pubKeyBytes := ssh.MarshalAuthorizedKey(publicKey)
-
-	// Write public key to file
-	if err := os.WriteFile(publicKeyPath, pubKeyBytes, 0644); err != nil {
-		return nil, fmt.Errorf("failed to write public key: %v", err)
-	}
-
-	// Create SSH key in Hetzner
-	hcloudKey, _, err := p.client.SSHKey.Create(ctx, hcloud.SSHKeyCreateOpts{
-		Name:      sshKeyName,
-		PublicKey: string(pubKeyBytes),
+		Bytes: x509.MarshalPKCS1PrivateKey(key),
 	})
-	if err != nil {
-		return nil, errors.NewAPIError("SSHKey", http.StatusInternalServerError, fmt.Sprintf("failed to create SSH key: %v", err))
-	}
-
-	// Notify the user about the private key location
-	fmt.Printf("Private key stored at: %s\n", filepath.Join(".", privateKeyPath))
-
-	return hcloudKey, nil
-} 
+}
