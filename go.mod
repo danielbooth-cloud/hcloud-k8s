@@ -9,6 +9,7 @@ require (
 	github.com/briandowns/spinner v1.23.0
 	github.com/hetznercloud/hcloud-go/v2 v2.17.1
 	github.com/spf13/cobra v1.7.0
+	golang.org/x/crypto v0.31.0
 )
 
 require (

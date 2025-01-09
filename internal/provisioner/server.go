@@ -92,14 +92,21 @@ func (p *ServerProvisioner) provisionNodes(ctx context.Context, nodeType NodeTyp
 }
 
 func (p *ServerProvisioner) createServer(ctx context.Context, name string, nodeType NodeType) error {
+	// Generate or retrieve the SSH key
+	sshKey, err := p.generateSSHKey(ctx, p.config.ClusterName)
+	if err != nil {
+		return err
+	}
+
 	serverType := util.ExtractFirstPart(p.config.NodeType)
 	location := util.ExtractFirstPart(p.config.Region)
-	
+
 	opts := hcloud.ServerCreateOpts{
 		Name:       name,
 		ServerType: &hcloud.ServerType{Name: serverType},
-		Image:     &hcloud.Image{Name: "ubuntu-22.04"},
-		Location:  &hcloud.Location{Name: location},
+		Image:      &hcloud.Image{Name: "ubuntu-22.04"},
+		Location:   &hcloud.Location{Name: location},
+		SSHKeys:    []*hcloud.SSHKey{sshKey},
 		Labels: map[string]string{
 			"cluster": p.config.ClusterName,
 			"role":    string(nodeType),
