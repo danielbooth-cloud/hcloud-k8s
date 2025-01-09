@@ -97,30 +97,38 @@ func (p *ServerProvisioner) getLatestUbuntuImage(ctx context.Context) (*hcloud.I
 		return nil, fmt.Errorf("failed to get images: %v", err)
 	}
 
-	var latestUbuntu *hcloud.Image
-	var latestCreated string
+	latestImage := p.findLatestImageByFilter(images, func(img *hcloud.Image) bool {
+		return strings.Contains(strings.ToLower(img.Name), "ubuntu") && 
+			   img.Architecture == "x86"
+	})
 
-	for _, img := range images {
-		// Check if it's an Ubuntu image and x86 architecture
-		if strings.Contains(strings.ToLower(img.Name), "ubuntu") && img.Architecture == "x86" {
-			// Update if this is the first or a newer image
-			if latestUbuntu == nil || img.Created.String() > latestCreated {
-				latestUbuntu = img
-				latestCreated = img.Created.String()
-			}
-		}
-	}
-
-	if latestUbuntu == nil {
+	if latestImage == nil {
 		return nil, fmt.Errorf("no x86 Ubuntu images found")
 	}
 
 	p.logger.Info("selected Ubuntu image", 
-		"name", latestUbuntu.Name,
-		"architecture", latestUbuntu.Architecture,
-		"created", latestCreated)
+		"name", latestImage.Name,
+		"architecture", latestImage.Architecture,
+		"created", latestImage.Created)
 
-	return latestUbuntu, nil
+	return latestImage, nil
+}
+
+// findLatestImageByFilter returns the most recently created image that matches the filter criteria
+func (p *ServerProvisioner) findLatestImageByFilter(images []*hcloud.Image, filter func(*hcloud.Image) bool) *hcloud.Image {
+	var latest *hcloud.Image
+	
+	for _, img := range images {
+		if !filter(img) {
+			continue
+		}
+		
+		if latest == nil || img.Created.After(latest.Created) {
+			latest = img
+		}
+	}
+	
+	return latest
 }
 
 func (p *ServerProvisioner) createServer(ctx context.Context, name string, nodeType NodeType) error {

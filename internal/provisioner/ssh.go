@@ -55,7 +55,7 @@ func (p *ServerProvisioner) generateSSHKey(ctx context.Context, clusterName stri
 		return nil, errors.NewAPIError("SSHKey", http.StatusInternalServerError, fmt.Sprintf("failed to create SSH key: %v", err))
 	}
 
-	fmt.Printf("Private key stored at: %s\n", filepath.Join(".", privateKeyPath))
+	fmt.Printf("Private key stored in active directory")
 	return hcloudKey, nil
 }
 
