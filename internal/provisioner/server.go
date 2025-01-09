@@ -7,11 +7,11 @@ import (
 	"net/http"
 	"strings"
 	"time"
-	"hcloud-k8s/internal/util"
 	"hcloud-k8s/internal/errors"
 	"hcloud-k8s/internal/logging"
 	"github.com/briandowns/spinner"
 	"github.com/hetznercloud/hcloud-go/v2/hcloud"
+	"hcloud-k8s/internal/util"
 )
 
 // NodeType represents the type of node (master or worker)
@@ -91,6 +91,46 @@ func (p *ServerProvisioner) provisionNodes(ctx context.Context, nodeType NodeTyp
 	return nil
 }
 
+func (p *ServerProvisioner) getLatestUbuntuImage(ctx context.Context) (*hcloud.Image, error) {
+	images, err := p.client.Image.All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get images: %v", err)
+	}
+
+	latestImage := p.findLatestImageByFilter(images, func(img *hcloud.Image) bool {
+		return strings.Contains(strings.ToLower(img.Name), "ubuntu") && 
+			   img.Architecture == "x86"
+	})
+
+	if latestImage == nil {
+		return nil, fmt.Errorf("no x86 Ubuntu images found")
+	}
+
+	p.logger.Info("selected Ubuntu image", 
+		"name", latestImage.Name,
+		"architecture", latestImage.Architecture,
+		"created", latestImage.Created)
+
+	return latestImage, nil
+}
+
+// findLatestImageByFilter returns the most recently created image that matches the filter criteria
+func (p *ServerProvisioner) findLatestImageByFilter(images []*hcloud.Image, filter func(*hcloud.Image) bool) *hcloud.Image {
+	var latest *hcloud.Image
+	
+	for _, img := range images {
+		if !filter(img) {
+			continue
+		}
+		
+		if latest == nil || img.Created.After(latest.Created) {
+			latest = img
+		}
+	}
+	
+	return latest
+}
+
 func (p *ServerProvisioner) createServer(ctx context.Context, name string, nodeType NodeType) error {
 	// Generate or retrieve the SSH key
 	sshKey, err := p.generateSSHKey(ctx, p.config.ClusterName)
@@ -101,10 +141,16 @@ func (p *ServerProvisioner) createServer(ctx context.Context, name string, nodeT
 	serverType := util.ExtractFirstPart(p.config.NodeType)
 	location := util.ExtractFirstPart(p.config.Region)
 
+	// Get the latest Ubuntu image
+	image, err := p.getLatestUbuntuImage(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get latest Ubuntu image: %v", err)
+	}
+
 	opts := hcloud.ServerCreateOpts{
 		Name:       name,
 		ServerType: &hcloud.ServerType{Name: serverType},
-		Image:      &hcloud.Image{Name: "ubuntu-22.04"},
+		Image:      image,
 		Location:   &hcloud.Location{Name: location},
 		SSHKeys:    []*hcloud.SSHKey{sshKey},
 		Labels: map[string]string{

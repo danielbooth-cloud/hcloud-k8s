@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 
 	"golang.org/x/crypto/ssh"
 	"hcloud-k8s/internal/errors"
@@ -55,7 +54,7 @@ func (p *ServerProvisioner) generateSSHKey(ctx context.Context, clusterName stri
 		return nil, errors.NewAPIError("SSHKey", http.StatusInternalServerError, fmt.Sprintf("failed to create SSH key: %v", err))
 	}
 
-	fmt.Printf("Private key stored at: %s\n", filepath.Join(".", privateKeyPath))
+	fmt.Printf("Private key stored in active directory")
 	return hcloudKey, nil
 }
 
@@ -73,7 +72,8 @@ func (p *ServerProvisioner) findExistingSSHKey(ctx context.Context, sshKeyName s
 }
 
 func savePEMKey(filePath string, key *rsa.PrivateKey) error {
-	privateKeyFile, err := os.Create(filePath)
+	// Create the file with restricted permissions (0600)
+	privateKeyFile, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return fmt.Errorf("failed to create private key file: %v", err)
 	}
