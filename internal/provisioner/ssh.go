@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 
 	"golang.org/x/crypto/ssh"
 	"hcloud-k8s/internal/errors"
