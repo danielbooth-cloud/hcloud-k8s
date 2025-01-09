@@ -2,19 +2,22 @@ package survey
 
 import (
 	"context"
+	"fmt"
 	"github.com/AlecAivazis/survey/v2"
 	"hcloud-k8s/internal/hetzner"
+	"hcloud-k8s/internal/kubernetes"
 )
 
 // ClusterConfig holds the configuration for a Kubernetes cluster
 type ClusterConfig struct {
-	ClusterName       string
-	Region           string
-	MasterNodeCount  int
-	WorkerNodeCount  int
-	NodeType         string
-	KubernetesVersion string
-	HetznerToken     string
+	ClusterName           string
+	Region               string
+	MasterNodeCount      int
+	WorkerNodeCount      int
+	NodeType             string
+	KubernetesVersion    string
+	KubernetesDistribution string
+	HetznerToken         string
 }
 
 // GetClusterConfig collects cluster configuration through interactive prompts
@@ -78,18 +81,32 @@ func GetClusterConfig(ctx context.Context) (*ClusterConfig, error) {
 				Options: nodeTypes,
 			},
 		},
-		{
-			Name: "kubernetesVersion",
-			Prompt: &survey.Select{
-				Message: "Choose Kubernetes version:",
-				Options: []string{"1.27", "1.26", "1.25"},
-			},
-		},
 	}
 
 	if err := survey.Ask(questions, config); err != nil {
 		return nil, err
 	}
 
+	// Get Kubernetes distribution after basic cluster config
+	if err := survey.AskOne(&survey.Select{
+		Message: "Choose Kubernetes distribution:",
+		Options: kubernetes.GetDistributions(),
+	}, &config.KubernetesDistribution); err != nil {
+		return nil, err
+	}
+
+	// Get available versions for selected distribution
+	versions, err := kubernetes.GetVersions(ctx, kubernetes.Distribution(config.KubernetesDistribution))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get versions for %s: %v", config.KubernetesDistribution, err)
+	}
+
+	if err := survey.AskOne(&survey.Select{
+		Message: fmt.Sprintf("Choose %s version:", config.KubernetesDistribution),
+		Options: versions,
+	}, &config.KubernetesVersion); err != nil {
+		return nil, err
+	}
+
 	return config, nil
-} 
+}

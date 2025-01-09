@@ -3,8 +3,10 @@ package hetzner
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 	"github.com/hetznercloud/hcloud-go/v2/hcloud"
+	"hcloud-k8s/internal/errors"
 )
 
 const (
@@ -29,11 +31,18 @@ func (c *Client) GetLocations(ctx context.Context) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, DefaultTimeout)
 	defer cancel()
 
-	locations, _, err := c.Location.List(ctx, hcloud.LocationListOpts{})
+	locations, resp, err := c.Location.List(ctx, hcloud.LocationListOpts{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get locations: %v", err)
+		if resp != nil {
+			return nil, errors.NewAPIError("GetLocations", resp.StatusCode, err.Error())
+		}
+		return nil, errors.NewAPIError("GetLocations", http.StatusInternalServerError, err.Error())
 	}
 	
+	if len(locations) == 0 {
+		return nil, errors.NewConfigError("Locations", "no locations available")
+	}
+
 	var names []string
 	for _, loc := range locations {
 		names = append(names, fmt.Sprintf("%s (%s)", loc.Name, loc.Description))

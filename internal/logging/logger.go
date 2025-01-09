@@ -8,6 +8,7 @@ import (
 // LogLevel represents the logging level
 type LogLevel string
 
+// LogLevel represents the logging level
 const (
 	LevelDebug LogLevel = "DEBUG"
 	LevelInfo  LogLevel = "INFO"
