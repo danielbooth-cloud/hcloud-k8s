@@ -14,7 +14,11 @@ jobs:
         k8s-runner
         
     steps:
-    - uses: actions/checkout@v4
+    - name: Setup docker
+      uses: docker-practice/actions-setup-docker@v1
+            
+    - name: Checkout repo
+      uses: actions/checkout@v4
 
     - name: Set up Go
       uses: actions/setup-go@v4
