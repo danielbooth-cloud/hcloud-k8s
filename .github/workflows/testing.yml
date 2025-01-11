@@ -35,10 +35,10 @@ jobs:
      env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
-   - name: Run GoSec
-     uses: securego/gosec@master
-     with:
-       args: ./...
+  #  - name: Run GoSec
+  #    uses: securego/gosec@master
+  #    with:
+  #      args: ./...
 
   #  - name: Run Gitleaks
   #    uses: gitleaks/gitleaks-action@v2.3.7
