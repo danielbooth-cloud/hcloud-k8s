@@ -8,12 +8,12 @@ on:
 
 jobs:
 
-  security:
+  setup:
     runs-on: 
       labels:
         k8s-runner
-        
     steps:
+
     - name: Setup docker
       uses: docker-practice/actions-setup-docker@v1
             
@@ -24,6 +24,14 @@ jobs:
       uses: actions/setup-go@v4
       with:
         go-version: '1.23.4'
+
+  scans:
+    runs-on:
+      labels: 
+        k8s-runner
+    needs: 
+      - setup
+    steps:
 
     - name: SonarQube Scan
       uses: SonarSource/sonarqube-scan-action@v4
