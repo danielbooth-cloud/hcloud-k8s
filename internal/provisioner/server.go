@@ -132,7 +132,6 @@ func (p *ServerProvisioner) findLatestImageByFilter(images []*hcloud.Image, filt
 }
 
 func (p *ServerProvisioner) createServer(ctx context.Context, name string, nodeType NodeType) error {
-	// Generate or retrieve the SSH key
 	sshKey, err := p.generateSSHKey(ctx, p.config.ClusterName)
 	if err != nil {
 		return err
@@ -141,10 +140,33 @@ func (p *ServerProvisioner) createServer(ctx context.Context, name string, nodeT
 	serverType := util.ExtractFirstPart(p.config.NodeType)
 	location := util.ExtractFirstPart(p.config.Region)
 
-	// Get the latest Ubuntu image
 	image, err := p.getLatestUbuntuImage(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get latest Ubuntu image: %v", err)
+	}
+
+	// Determine if this is the first master node
+	isFirstMaster := nodeType == Master && strings.HasSuffix(name, "-1")
+
+	// Create user data for first master node
+	var userData string
+	if isFirstMaster {
+		userData = `#cloud-config
+package_update: true
+packages:
+    - nfs-common
+
+runcmd:
+    - curl -sfL https://get.rke2.io | sh -
+    - systemctl enable rke2-server.service
+    - systemctl start rke2-server.service
+    - |
+        cat <<EOT > /etc/systemd/resolved.conf
+        [Resolve]
+        DNS=1.1.1.1
+        FallbackDNS=1.0.0.1
+        EOT
+    - systemctl restart systemd-resolved`
 	}
 
 	opts := hcloud.ServerCreateOpts{
@@ -153,6 +175,7 @@ func (p *ServerProvisioner) createServer(ctx context.Context, name string, nodeT
 		Image:      image,
 		Location:   &hcloud.Location{Name: location},
 		SSHKeys:    []*hcloud.SSHKey{sshKey},
+		UserData:   userData,
 		Labels: map[string]string{
 			"cluster": p.config.ClusterName,
 			"role":    string(nodeType),
