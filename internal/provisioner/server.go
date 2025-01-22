@@ -12,6 +12,7 @@ import (
 	"github.com/briandowns/spinner"
 	"github.com/hetznercloud/hcloud-go/v2/hcloud"
 	"hcloud-k8s/internal/util"
+	"os/exec"
 )
 
 // NodeType represents the type of node (master or worker)
@@ -153,20 +154,23 @@ func (p *ServerProvisioner) createServer(ctx context.Context, name string, nodeT
 	if isFirstMaster {
 		userData = `#cloud-config
 package_update: true
+package_upgrade: true
+
 packages:
-    - nfs-common
+  - nfs-common
+
+write_files:
+  - path: /etc/systemd/resolved.conf
+    content: |
+      [Resolve]
+      DNS=1.1.1.1
+      FallbackDNS=1.0.0.1
 
 runcmd:
-    - curl -sfL https://get.rke2.io | sh -
-    - systemctl enable rke2-server.service
-    - systemctl start rke2-server.service
-    - |
-        cat <<EOT > /etc/systemd/resolved.conf
-        [Resolve]
-        DNS=1.1.1.1
-        FallbackDNS=1.0.0.1
-        EOT
-    - systemctl restart systemd-resolved`
+  - systemctl restart systemd-resolved
+  - curl -sfL https://get.rke2.io | INSTALL_RKE2_TYPE="agent" sh -
+  - systemctl enable rke2-server.service
+  - systemctl start rke2-server.service`
 	}
 
 	opts := hcloud.ServerCreateOpts{
@@ -188,7 +192,23 @@ runcmd:
 		return errors.NewAPIError("CreateServer", http.StatusInternalServerError, err.Error())
 	}
 
-	return p.waitForServer(ctx, result.Action)
+	if err := p.waitForServer(ctx, result.Action); err != nil {
+		return err
+	}
+
+	// If this is the first master node, wait for RKE2 server to be ready
+	if isFirstMaster {
+		server, _, err := p.client.Server.GetByID(ctx, result.Server.ID)
+		if err != nil {
+			return fmt.Errorf("failed to get server details: %v", err)
+		}
+
+		if err := p.waitForRKE2Server(ctx, server.PublicNet.IPv4.IP.String()); err != nil {
+			return fmt.Errorf("failed waiting for RKE2 server: %v", err)
+		}
+	}
+
+	return nil
 }
 
 func (p *ServerProvisioner) waitForServer(ctx context.Context, action *hcloud.Action) error {
@@ -232,4 +252,45 @@ func (p *ServerProvisioner) waitForServer(ctx context.Context, action *hcloud.Ac
 	}()
 
 	return <-done
+}
+
+func (p *ServerProvisioner) waitForRKE2Server(ctx context.Context, serverIP string) error {
+	s := spinner.New(spinner.CharSets[14], 100*time.Millisecond)
+	s.Suffix = " Waiting for RKE2 server to be ready..."
+	s.Start()
+	defer s.Stop()
+
+	// Maximum wait time of 5 minutes
+	timeout := time.After(5 * time.Minute)
+	tick := time.Tick(10 * time.Second)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timeout:
+			return fmt.Errorf("timeout waiting for RKE2 server to be ready")
+		case <-tick:
+			// Check if RKE2 server is running using SSH
+			cmd := exec.Command("ssh", 
+				"-o", "StrictHostKeyChecking=no",
+				"-o", "UserKnownHostsFile=/dev/null",
+				"-o", "LogLevel=ERROR", // Suppress SSH warnings
+				"-i", fmt.Sprintf("%s-key_id_rsa", p.config.ClusterName),
+				"root@"+serverIP,
+				"systemctl is-active rke2-server.service")
+
+			output, err := cmd.CombinedOutput()
+			status := strings.TrimSpace(string(output))
+			
+			if err == nil && status == "active" {
+				p.logger.Info("RKE2 server is ready",
+					"status", "active",
+					"server", serverIP)
+				return nil
+			}
+			
+			s.Suffix = " Waiting for RKE2 server to be ready..."
+		}
+	}
 } 
